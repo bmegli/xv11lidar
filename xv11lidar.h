@@ -17,6 +17,10 @@
 #include <stdint.h> //uint8_t, uint16_t
 #include <termios.h> //termios
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 //return value for all the functions
 enum xv11_status {SUCCESS=0, SYNCHRONIZATION_ERROR, TTY_ERROR, MEMORY_ERROR};
 
@@ -105,3 +109,7 @@ int CloseLaser(struct xv11lidar_data *lidar_data);
  * -lidar initialized with InitLaser
  */
 int ReadLaser(struct xv11lidar_data *lidar_data, struct laser_frame *frame_data);
+
+#ifdef __cplusplus
+}
+#endif
