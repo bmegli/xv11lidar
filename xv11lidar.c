@@ -104,17 +104,21 @@ int SynchronizeLaser(int fd, int laser_frames_per_read)
 }
 
 /*
+ * Initialize data values
  * Open the terminal
  * Save its original settings in lidar_data->old_io
  * Set terminal for raw byte input single byte at a time at 115200 speed
  * Synchronize with the laser
  * Alloc internal buffer for laser readings
  */
-int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_frames_per_read)
+int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_frames_per_read, int crc_tolerance_percent)
 {
 	int error;
 	struct termios io;
 	lidar_data->data=NULL;
+	lidar_data->crc_failures = 0;
+	lidar_data->crc_tolerance = crc_tolerance_percent * 90 / 100;
+	lidar_data->last_frame_index = 0;
 
 	if ((lidar_data->fd=open(tty, O_RDONLY))==-1)
 		return TTY_ERROR;
@@ -184,7 +188,7 @@ int ReadLaser(struct xv11lidar_data *lidar_data, struct laser_frame *frame_data)
 	uint8_t *data=lidar_data->data; 
 	size_t bytes_read=0;
 	int status=0;
-	int i;
+	int i, j;
 	
 	while( bytes_read < total_read_size )
 	{
@@ -200,11 +204,33 @@ int ReadLaser(struct xv11lidar_data *lidar_data, struct laser_frame *frame_data)
 	
 	for(i=0;i<lidar_data->laser_frames_per_read;++i)
 	{
-		if(Checksum(data+i*sizeof(struct laser_frame))!=frame_data[i].checksum)
+		lidar_data->last_frame_index = lidar_data->last_frame_index + 1;
+
+		if(lidar_data->last_frame_index>=90)		
+			lidar_data->last_frame_index=0;
+			
+		if(Checksum(data+i*sizeof(struct laser_frame))!=frame_data[i].checksum || frame_data[i].start!=0xFA)
+		{
+			++lidar_data->crc_failures;
+			if(lidar_data->crc_failures > lidar_data->crc_tolerance)
+				return SYNCHRONIZATION_ERROR;
+			frame_data[i].index = lidar_data->last_frame_index;
+			for(j=0;j<4;++j)
+			{
+				frame_data[i].readings[j].invalid_data=1;
+				frame_data[i].readings[j].distance=666;				
+			}
+	
 			fprintf(stderr, " CRCFAIL ");			
+		}
 		
-		if(frame_data[i].start!=0xFA)
-			return SYNCHRONIZATION_ERROR;
+		if(frame_data[i].index==0)
+			lidar_data->crc_failures = 0;
+		if(frame_data[i].index != lidar_data->last_frame_index)
+		{
+			lidar_data->last_frame_index=frame_data[i].index;
+			fprintf(stderr, " LIDAR_SKIPPED_SOME_FRAMES \n");				
+		}
 	}
 	return SUCCESS; 
 }
