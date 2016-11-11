@@ -30,6 +30,9 @@ struct xv11lidar_data
 	int fd;
 	struct termios old_io;
 	int laser_frames_per_read;
+	int crc_tolerance;
+	int crc_failures;
+	int last_frame_index;
 	uint8_t *data;
 };
 
@@ -64,6 +67,7 @@ struct laser_frame
 * lidar_data - internal data 
 * tty - the path to lidar tty
 * laser_frames_per_read - configure tty to read that much frames per read, each frame has 4 degree scan
+* crc_tolerance_percent - accept up to this crc_failures each revolution, range <0, 100>
 * 
 * returns:
 * xv11_status.SUCCESS (0) on success
@@ -76,7 +80,7 @@ struct laser_frame
 * -lego port set to other-uart mode
 *
 */
-int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_frames_per_read);
+int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_frames_per_read, int crc_tolerance_percent);
 
 /* Cleans up (file descriptors, tty is set back to inital configuration)
 * parameters:
