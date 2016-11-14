@@ -25,7 +25,7 @@
 
 // those constants can be tuned
 const int CRC_FAILURE_ERROR_CODE=666; //the error code encoded in distance when CRC failure happens (invalid data is also set)
-const int REQUIRED_SYNC_FRAMES=10; //the number of consecutuve frames that is required to be read correctly (CRC) for sync
+const int REQUIRED_SYNC_FRAMES=45; //the number of consecutuve frames that is required to be read correctly (CRC) for sync
 
 // those constants should not be touched
 const int FRAME_SIZE=sizeof(struct laser_frame);	
