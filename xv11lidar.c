@@ -203,7 +203,7 @@ int SynchronizeLaser(int fd, int laser_frames_per_read)
 					if( (status=ReadAll(fd, data, FRAME_SIZE)) != SUCCESS )
 						return TTY_ERROR;
 					
-					if( !IsFrameChecksumCorrect(data) )
+					if(data[0] != FRAME_START_BYTE || !IsFrameChecksumCorrect(data) )
 						break;
 				}
 				if( i != REQUIRED_SYNC_FRAMES )
