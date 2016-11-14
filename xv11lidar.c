@@ -23,6 +23,13 @@
 #include <string.h> //memcpy
 #include <limits.h> //UCHAR_MAX
 
+const int FRAME_SIZE=sizeof(struct laser_frame);	
+const int FRAME_CHECKSUM_OFFSET=20;
+const int FRAME_INDEX_OFFSET=1;
+
+const int REQUIRED_SYNC_FRAMES=3;
+
+
 /*
  *  This function calculates the checksum from the first 20 bytes of frame returned by the LIDAR
  *  You can expose this function (in xv11lidar.h) and compare its value with laser_frame.checksum
@@ -48,6 +55,30 @@ uint16_t Checksum(const uint8_t data[20])
 	return checksum & 0x7FFF;
 }
 
+int ReadAll(int fd, uint8_t *data,int total_read_size)
+{
+	size_t bytes_read=0;
+	int status;
+	
+	while( bytes_read < total_read_size )
+	{
+		if( (status=read(fd,data+bytes_read,total_read_size-bytes_read))<0 )
+			return TTY_ERROR;
+		else if(status==0)
+			return TTY_ERROR;
+			
+		bytes_read+=status;
+	}
+	return SUCCESS;
+}
+
+int IsFrameChecksumCorrect(const uint8_t data[FRAME_SIZE])
+{
+	uint16_t checksum;
+	memcpy(&checksum, data+FRAME_CHECKSUM_OFFSET, sizeof(checksum));
+	return checksum == Checksum(data);
+}
+
 /*
  * Flushes the TTY buffer so that we synchronize on new data
  * Waits for 0xFA byte (starting laser_frame) followed by 0xA0 which is angle 0-3 frame
@@ -56,10 +87,11 @@ uint16_t Checksum(const uint8_t data[20])
  * Finally sets the termios to return the data in largest possible chunks (termios.c_cc[VMIN])
  */
 int SynchronizeLaser(int fd, int laser_frames_per_read)
-{		
-	uint8_t c=0;
-	int i;
-		
+{	
+	int i, status;
+	uint8_t data[FRAME_SIZE];
+	
+	
 	//flush the current TTY data so that buffers are clean
 	//The LIDAR may have been spinning for a while
 	if(tcflush(fd, TCIOFLUSH)!=0)
@@ -67,18 +99,34 @@ int SynchronizeLaser(int fd, int laser_frames_per_read)
 
 	while(1)
 	{
-		if (read(fd,&c,1)>0)
+		if (read(fd,data,1)>0)
 		{
 			//wait for frame start
-			if(c==0xFA)
+			if(data[0]==0xFA)
 			{
-				//wait for angle 0
-				if (read(fd,&c,1)>0 && c!=0xA0)
+				if( (status=ReadAll(fd, data+1, FRAME_SIZE-1)) != SUCCESS )
+					return TTY_ERROR;
+			
+				if( !IsFrameChecksumCorrect(data) )
 					continue;
-				
-				//discard 360 degree scan (next 20 bytes of frame 0 and 89 frames with 22 bytes)
-				for(i=0;i<20 + 22*89;++i) 
-					if (read(fd,&c,1)<0)
+
+				for(i=1;i<REQUIRED_SYNC_FRAMES;++i)
+				{
+					if( (status=ReadAll(fd, data, FRAME_SIZE)) != SUCCESS )
+						return TTY_ERROR;
+					
+					if( !IsFrameChecksumCorrect(data) )
+						break;
+				}
+				if( i != REQUIRED_SYNC_FRAMES )
+					continue;
+
+				//discard bytes until 0 inxed frame		
+				int index=*(data+FRAME_INDEX_OFFSET)-0xA0;
+				int bytes_to_discard=(89-index) * FRAME_SIZE;
+			
+				for(i=0;i<bytes_to_discard;++i) 
+					if (read(fd,data,1)<0)
 						return TTY_ERROR;						
 					
 				//get the termios and set it to return data in largest possible chunks
@@ -118,7 +166,7 @@ int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_fram
 	lidar_data->data=NULL;
 	lidar_data->crc_failures = 0;
 	lidar_data->crc_tolerance = crc_tolerance_percent * 90 / 100;
-	lidar_data->last_frame_index = 0xA0;
+	lidar_data->last_frame_index = 0xA0 + 90 - 1;
 
 	if ((lidar_data->fd=open(tty, O_RDONLY))==-1)
 		return TTY_ERROR;
@@ -178,6 +226,8 @@ int CloseLaser(struct xv11lidar_data *lidar_data)
 	return error;
 }
 
+
+
 /*
  * Read from LIDAR until requested number of frames is read or error occurs
  * 
@@ -186,20 +236,12 @@ int ReadLaser(struct xv11lidar_data *lidar_data, struct laser_frame *frame_data)
 {
 	const size_t total_read_size=sizeof(struct laser_frame)*lidar_data->laser_frames_per_read;
 	uint8_t *data=lidar_data->data; 
-	size_t bytes_read=0;
 	int status=0;
 	int i, j;
 	
-	while( bytes_read < total_read_size )
-	{
-		if( (status=read(lidar_data->fd,data+bytes_read,total_read_size-bytes_read))<0 )
-			return TTY_ERROR;
-		else if(status==0)
-			return TTY_ERROR;
-			
-		bytes_read+=status;
-	}
-
+	if( ( status=ReadAll(lidar_data->fd, data, total_read_size) ) != SUCCESS)
+		return status;
+	
 	memcpy(frame_data, data, total_read_size);
 	
 	for(i=0;i<lidar_data->laser_frames_per_read;++i)
