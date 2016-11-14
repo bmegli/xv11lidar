@@ -118,7 +118,7 @@ int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_fram
 	lidar_data->data=NULL;
 	lidar_data->crc_failures = 0;
 	lidar_data->crc_tolerance = crc_tolerance_percent * 90 / 100;
-	lidar_data->last_frame_index = 0;
+	lidar_data->last_frame_index = 0xA0;
 
 	if ((lidar_data->fd=open(tty, O_RDONLY))==-1)
 		return TTY_ERROR;
@@ -206,8 +206,8 @@ int ReadLaser(struct xv11lidar_data *lidar_data, struct laser_frame *frame_data)
 	{
 		lidar_data->last_frame_index = lidar_data->last_frame_index + 1;
 
-		if(lidar_data->last_frame_index>=90)		
-			lidar_data->last_frame_index=0;
+		if(lidar_data->last_frame_index >= 90 + 0xA0)		
+			lidar_data->last_frame_index=0xA0;
 			
 		if(Checksum(data+i*sizeof(struct laser_frame))!=frame_data[i].checksum || frame_data[i].start!=0xFA)
 		{
