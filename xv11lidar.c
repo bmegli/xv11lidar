@@ -38,7 +38,7 @@ const uint8_t FRAME_INDEX_0=0xA0;
 const int FRAMES_PER_ROTATION=90;
 const int READINGS_PER_FRAME=4;
 
-int SynchronizeLaser(int fd, int laser_frames_per_read);
+int SynchronizeLaser(struct xv11lidar_data *lidar_data);
 int ReadAll(int fd, uint8_t *data,int total_read_size);
 uint16_t Checksum(const uint8_t data[FRAME_SIZE]);
 int IsFrameChecksumCorrect(const uint8_t data[FRAME_SIZE]);
@@ -49,8 +49,9 @@ int IsFrameChecksumCorrect(const uint8_t data[FRAME_SIZE]);
  * Open the terminal
  * Save its original settings in lidar_data->old_io
  * Set terminal for raw byte input single byte at a time at 115200 speed
+ * Close and open tty (this is workaround for "...too much work for IRQ..."
+ * Alloc internal memory for laser readings
  * Synchronize with the laser
- * Alloc internal buffer for laser readings
  */
 int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_frames_per_read, int crc_tolerance_percent)
 {
@@ -93,18 +94,25 @@ int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_fram
 		return TTY_ERROR;
 	}
 	
-	close(lidar_data->fd);
+	// this is workaround for "too much work for IRQ", we close and reopoen the tty after settings and flush
+	close(lidar_data->fd);			
 	if ((lidar_data->fd=open(tty, O_RDONLY))==-1)
 		return TTY_ERROR;
-						
-	error=SynchronizeLaser(lidar_data->fd, laser_frames_per_read);
-	if(error!=SUCCESS)
-		close(lidar_data->fd);
-	else if( (lidar_data->data=(uint8_t*)malloc(laser_frames_per_read*sizeof(struct laser_frame))) == 0)
+	
+	if( (lidar_data->data=(uint8_t*)malloc(laser_frames_per_read*sizeof(struct laser_frame))) == 0)
 	{
 		close(lidar_data->fd);
 		return MEMORY_ERROR;
+	}				
+	
+	error=SynchronizeLaser(lidar_data);
+
+	if(error!=SUCCESS)
+	{
+		free(lidar_data->data);
+		close(lidar_data->fd);
 	}
+	
 	return error;
 }
 
@@ -177,63 +185,66 @@ int ReadLaser(struct xv11lidar_data *lidar_data, struct laser_frame *frame_data)
 }
 
 /*
- * Flushes the TTY buffer so that we synchronize on new data
  * Waits for 0xFA byte and REQUIRED_SYNC_FRAMES consecutive frames with correct checksum
  * Discards the rest bytes so that next read starts from frame with index 0 (0xA0)
- * Finally sets the termios to return the data in largest possible chunks (termios.c_cc[VMIN])
  */
-int SynchronizeLaser(int fd, int laser_frames_per_read)
+int SynchronizeLaser(struct xv11lidar_data *lidar_data)
 {	
-	int i;
-	uint8_t data[FRAME_SIZE*FRAMES_PER_ROTATION];
+	int fd=lidar_data->fd, i;
+	uint8_t *data=lidar_data->data;
+	int  data_size=FRAME_SIZE * lidar_data->laser_frames_per_read;
 	
 	while(1)
 	{
-		if ( (ReadAll(fd, data, FRAME_SIZE)) == SUCCESS) 
-		{
-			// find frame start byte
-			for(i=0;i<FRAME_SIZE;++i)
-				if(data[i] == FRAME_START_BYTE)
-					break;
-			if(i == FRAME_SIZE)
-				continue; 
-	
-			//get the rest of frame
-			memmove(data, data+i,FRAME_SIZE-i);
-				
-			if(i>0)
-				if(ReadAll(fd, data+i, i) != SUCCESS ) 
- 					return TTY_ERROR;
-			
-			if( !IsFrameChecksumCorrect(data) )
-				continue;
-
-			for(i=1;i<REQUIRED_SYNC_FRAMES;++i)
-			{
-				if( ReadAll(fd, data, FRAME_SIZE) != SUCCESS )
-					return TTY_ERROR;
-				
-				if(data[0] != FRAME_START_BYTE || !IsFrameChecksumCorrect(data) )
-					break;
-			}
-			if( i != REQUIRED_SYNC_FRAMES )
-				continue;
-
-			//discard bytes until 0 inxed frame		
-			int index=*(data+FRAME_INDEX_OFFSET)-FRAME_INDEX_0;
-			int bytes_to_discard=(FRAMES_PER_ROTATION-1-index) * FRAME_SIZE;
-			
-			if( ReadAll(fd, data, bytes_to_discard) != SUCCESS )
-				return TTY_ERROR;	
-							 
-			break;
-		}
-		else
+		if ( (ReadAll(fd, data, FRAME_SIZE)) != SUCCESS)
 			return TTY_ERROR;
-	}
-	return SUCCESS;
-}
+		
+		// find frame start byte
+		for(i=0;i<FRAME_SIZE;++i)
+			if(data[i] == FRAME_START_BYTE)
+				break;
+		if(i == FRAME_SIZE)
+			continue; 
 
+		//get the rest of frame
+		memmove(data, data+i,FRAME_SIZE-i);
+			
+		if(i>0)
+			if(ReadAll(fd, data+i, i) != SUCCESS ) 
+				return TTY_ERROR;
+
+		//checksum k consecutive frames
+		if( !IsFrameChecksumCorrect(data) )
+			continue;
+
+		for(i=1;i<REQUIRED_SYNC_FRAMES;++i)
+		{
+			if( ReadAll(fd, data, FRAME_SIZE) != SUCCESS )
+				return TTY_ERROR;
+			
+			if(data[0] != FRAME_START_BYTE || !IsFrameChecksumCorrect(data) )
+				break;
+		}
+
+		if( i != REQUIRED_SYNC_FRAMES )
+			continue;
+
+		//discard bytes until 0 angle frame		
+		int index=*(data+FRAME_INDEX_OFFSET)-FRAME_INDEX_0;
+		int bytes_to_discard=(FRAMES_PER_ROTATION-1-index) * FRAME_SIZE;
+		
+		while(bytes_to_discard > data_size)
+			if( ReadAll(fd, data, data_size) != SUCCESS )
+				return TTY_ERROR;	
+			else
+				bytes_to_discard-=data_size;
+
+		if( ReadAll(fd, data, bytes_to_discard) != SUCCESS )
+			return TTY_ERROR;	
+						 
+		return SUCCESS;
+	}
+}
 
 int ReadAll(int fd, uint8_t *data,int total_read_size)
 {
