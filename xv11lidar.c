@@ -60,6 +60,7 @@ int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_fram
 	lidar_data->crc_failures = 0;
 	lidar_data->crc_tolerance = crc_tolerance_percent * 90 / 100;
 	lidar_data->last_frame_index = FRAME_INDEX_0 + FRAMES_PER_ROTATION - 1;
+	lidar_data->laser_frames_per_read=laser_frames_per_read;
 
 	if ((lidar_data->fd=open(tty, O_RDONLY))==-1)
 		return TTY_ERROR;
@@ -86,14 +87,16 @@ int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_fram
 		return TTY_ERROR;		
 	}
 
-	if(tcsetattr(lidar_data->fd, TCSANOW, &io) < 0)
+	if(tcsetattr(lidar_data->fd, TCSAFLUSH, &io) < 0)
 	{
 		close(lidar_data->fd);
 		return TTY_ERROR;
 	}
-				
-	lidar_data->laser_frames_per_read=laser_frames_per_read;
-		
+	
+	close(lidar_data->fd);
+	if ((lidar_data->fd=open(tty, O_RDONLY))==-1)
+		return TTY_ERROR;
+						
 	error=SynchronizeLaser(lidar_data->fd, laser_frames_per_read);
 	if(error!=SUCCESS)
 		close(lidar_data->fd);
