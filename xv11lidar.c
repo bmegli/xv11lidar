@@ -86,7 +86,7 @@ int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_fram
 		return TTY_ERROR;		
 	}
 
-	if(tcsetattr(lidar_data->fd, TCSAFLUSH, &io) < 0)
+	if(tcsetattr(lidar_data->fd, TCSANOW, &io) < 0)
 	{
 		close(lidar_data->fd);
 		return TTY_ERROR;
@@ -184,11 +184,6 @@ int SynchronizeLaser(int fd, int laser_frames_per_read)
 	int i;
 	uint8_t data[FRAME_SIZE*FRAMES_PER_ROTATION];
 	
-	//flush the current TTY data so that buffers are clean
-	//The LIDAR may have been spinning for a while
-	if(tcflush(fd, TCIFLUSH)!=0)
-		return TTY_ERROR;
-
 	while(1)
 	{
 		if ( (ReadAll(fd, data, FRAME_SIZE)) == SUCCESS) 
