@@ -73,7 +73,11 @@ int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_fram
 	io.c_iflag=io.c_oflag=io.c_lflag=0;
 	io.c_cflag=CS8|CREAD|CLOCAL; //8 bit characters
 	
-	io.c_cc[VMIN]=sizeof(struct laser_frame); //one input byte enough
+	if(laser_frames_per_read*sizeof(struct laser_frame) <= UCHAR_MAX)					
+		io.c_cc[VMIN]=laser_frames_per_read*sizeof(struct laser_frame); 
+	else
+		io.c_cc[VMIN]=11*sizeof(struct laser_frame); //11*22=242 which is the largest possible value <= UCHAR_MAX 	
+
 	io.c_cc[VTIME]=0; // no timeout
 	
 	if(cfsetispeed(&io, B115200) < 0 || cfsetospeed(&io, B115200) < 0)
@@ -177,8 +181,8 @@ int ReadLaser(struct xv11lidar_data *lidar_data, struct laser_frame *frame_data)
  */
 int SynchronizeLaser(int fd, int laser_frames_per_read)
 {	
-	int i, status;
-	uint8_t data[FRAME_SIZE];
+	int i;
+	uint8_t data[FRAME_SIZE*FRAMES_PER_ROTATION];
 	
 	//flush the current TTY data so that buffers are clean
 	//The LIDAR may have been spinning for a while
@@ -187,56 +191,44 @@ int SynchronizeLaser(int fd, int laser_frames_per_read)
 
 	while(1)
 	{
-		if (read(fd,data,1)>0)
+		if ( (ReadAll(fd, data, FRAME_SIZE)) == SUCCESS) 
 		{
-			//wait for frame start
-			if(data[0] == FRAME_START_BYTE)
-			{
-				if( (status=ReadAll(fd, data+1, FRAME_SIZE-1)) != SUCCESS )
-					return TTY_ERROR;
-			
-				if( !IsFrameChecksumCorrect(data) )
-					continue;
-
-				for(i=1;i<REQUIRED_SYNC_FRAMES;++i)
-				{
-					if( (status=ReadAll(fd, data, FRAME_SIZE)) != SUCCESS )
-						return TTY_ERROR;
-					
-					if(data[0] != FRAME_START_BYTE || !IsFrameChecksumCorrect(data) )
-						break;
-				}
-				if( i != REQUIRED_SYNC_FRAMES )
-					continue;
-
-				//discard bytes until 0 inxed frame		
-				int index=*(data+FRAME_INDEX_OFFSET)-FRAME_INDEX_0;
-				int bytes_to_discard=(FRAMES_PER_ROTATION-1-index) * FRAME_SIZE;
-			
-				for(i=0;i<bytes_to_discard;++i) 
-					if ( (status=read(fd,data,1)) <0 )
-						return TTY_ERROR;	
-					else if(status==0)
-						fprintf(stderr, "LIDAR sync got 0 on read\n");
-					
-				/*	
-				//get the termios and set it to return data in largest possible chunks
-				struct termios io;
-				if(tcgetattr(fd, &io) < 0)				
-					return TTY_ERROR;
-							
-				if(laser_frames_per_read*sizeof(struct laser_frame) <= UCHAR_MAX)					
-					io.c_cc[VMIN]=laser_frames_per_read*sizeof(struct laser_frame); 
-				else
-					io.c_cc[VMIN]=11*sizeof(struct laser_frame); //11*22=242 which is the largest possible value <= UCHAR_MAX 	
+			// find frame start byte
+			for(i=0;i<FRAME_SIZE;++i)
+				if(data[i] == FRAME_START_BYTE)
+					break;
+			if(i == FRAME_SIZE)
+				continue; 
 	
-					
-				if(tcsetattr(fd, TCSANOW, &io) < 0)
+			//get the rest of frame
+			memmove(data, data+i,FRAME_SIZE-i);
+				
+			if(i>0)
+				if(ReadAll(fd, data+i, i) != SUCCESS ) 
+ 					return TTY_ERROR;
+			
+			if( !IsFrameChecksumCorrect(data) )
+				continue;
+
+			for(i=1;i<REQUIRED_SYNC_FRAMES;++i)
+			{
+				if( ReadAll(fd, data, FRAME_SIZE) != SUCCESS )
 					return TTY_ERROR;
-				*/
-		 
-				break;
-			}	
+				
+				if(data[0] != FRAME_START_BYTE || !IsFrameChecksumCorrect(data) )
+					break;
+			}
+			if( i != REQUIRED_SYNC_FRAMES )
+				continue;
+
+			//discard bytes until 0 inxed frame		
+			int index=*(data+FRAME_INDEX_OFFSET)-FRAME_INDEX_0;
+			int bytes_to_discard=(FRAMES_PER_ROTATION-1-index) * FRAME_SIZE;
+			
+			if( ReadAll(fd, data, bytes_to_discard) != SUCCESS )
+				return TTY_ERROR;	
+							 
+			break;
 		}
 		else
 			return TTY_ERROR;
