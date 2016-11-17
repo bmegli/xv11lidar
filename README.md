@@ -12,12 +12,12 @@ This library doesn't control the motor, only the LIDAR communication.
 It is low level library that lets you read as little data as you need.
 This is important if you want to have super-precise timestamping scheme.
 
-This power comes at a price - the library returns LIDAR frames in raw form output by the device.
+The library returns LIDAR frames in raw form output by the device.
 
 The library has only 3 functions:
-- InitLaser
-- ReadLaser (you will probably want to call this in a loop)
-- CloseLaser
+- xv11lidar_init
+- xv11lidar_read (you will probably want to call this in a loop)
+- xv11lidar_close
 
 ## Implementations
 
