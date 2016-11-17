@@ -21,19 +21,25 @@
 extern "C" {
 #endif
 
-//return value for all the functions
-enum xv11_status {SUCCESS=0, SYNCHRONIZATION_ERROR, TTY_ERROR, MEMORY_ERROR};
-
-//internal data used by the functions
-struct xv11lidar_data
+// xv11lidar_read return values
+enum xv11lidar_status
 {
-	int fd;
-	struct termios old_io;
-	int laser_frames_per_read;
-	int crc_tolerance;
-	int crc_failures;
-	int last_frame_index;
-	uint8_t *data;
+	XV11LIDAR_SUCCESS= 0, 
+	XV11LIDAR_TTY_ERROR = -1, //tty read fatal error, errno is set in this case
+	XV11LIDAR_SYNC_ERROR = 2  //the number of incorrectly read frames (CRC failures) exceeded the set set limit 
+};
+
+// xv11lidar_reading.distance encoded error when xv11lidar_reading.invalid_data==1
+// TO DO - explain other codes and give them descriptive names
+enum xv11lidar_invalid_data 
+{
+	XV11LIDAR_CRC_FAILURE=0x66, //the frame had incorrect CRC, don't use the data
+	XV11LIDAR_ERROR1=0x02,
+	XV11LIDAR_ERROR2=0x03,
+	XV11LIDAR_ERROR3=0x21,
+	XV11LIDAR_ERROR4=0x25,
+	XV11LIDAR_ERROR5=0x35,
+	XV11LIDAR_ERROR6=0x50,
 };
 
 /*	For complete information on LIDAR data format see: 
@@ -41,7 +47,7 @@ struct xv11lidar_data
  *  LIDAR returns data in frames of 4 consecutive readings (angles)
 */
 //single angle reading
-struct laser_reading
+struct xv11lidar_reading
 {
 	unsigned int distance : 14; //distance or error code when invalid_data flag is set
 	unsigned int strength_warning : 1; //flag indicating that reported signal strength is lower then expected
@@ -50,69 +56,66 @@ struct laser_reading
 } __attribute__((packed));
 
 //single frame read from lidar
-struct laser_frame
+struct xv11lidar_frame
 {
 	uint8_t start; //fixed 0xFA can be used for synchronization
 	uint8_t index; //(index-0xA0)*4 is the angle for readings[0] (+1,2,3 for consecutive readings)
 	uint16_t speed; //divide by 64 to get speed in rpm
-	struct laser_reading readings[4]; //readings for 4 consecutive angles
-	uint16_t checksum; //if you need it in xv11lidar.c there is a function for calculating the checksum, compare with this value
+	struct xv11lidar_reading readings[4]; //readings for 4 consecutive angles
+	uint16_t checksum; //if checksum is incorrect invalid_data
 	
 } __attribute__((packed));
 
+
+//internal data used by the functions (as pointer)
+struct xv11lidar;
+
 /* Sets terminal to the appropriate mode and synchrnonizes with the device
- * If this function fails there is no need to call CloseLaser
  * 
 * parameters:
-* lidar_data - internal data 
 * tty - the path to lidar tty
 * laser_frames_per_read - configure tty to read that much frames per read, each frame has 4 degree scan
 * crc_tolerance_percent - accept up to this crc_failures each revolution, range <0, 100>
 * 
 * returns:
-* xv11_status.SUCCESS (0) on success
-* xv11_status.TTY_ERROR (2) on failure
-* xv11_status.MEMORY_ERROR (3) on memory allocation failure
+* - NULL on error, currently the reason will be printed to standard error
+* - otherwise internal library data pointer, pass it to other functions
 * 
 * preconditions:
 * -lidar spinning CCW at around 300 RPM
 * -lidar uart reachable at tty 
-* -lego port set to other-uart mode
+* -port set to other-uart mode
 *
 */
-int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_frames_per_read, int crc_tolerance_percent);
+struct xv11lidar *xv11lidar_init(const char *tty, int laser_frames_per_read, int crc_tolerance_percent);
 
-/* Cleans up (file descriptors, tty is set back to inital configuration)
+/* Cleans up (file descriptors, memory,  tty is set back to inital configuration)
 * parameters:
-* lidar_data - internal data
-* 
-* returns:
-* xv11_status.SUCCESS (0) on success
-* xv11_status.TTY_ERROR (2) on failure
-* 
+* lidar_data - internal library data
+*  
 * preconditions:
-* -lidar initialized InitLaser
+* -lidar initialized successfully with xv11lidar_init
 */
-int CloseLaser(struct xv11lidar_data *lidar_data);
+void xv11lidar_close(struct xv11lidar *lidar_data);
 
 /* Reads from the lidar tty the number of frames configured during initialization
- * This is a blocking function
+ * This function blocks until configured number of frames is read, read error occurs or sync is lost
  * 
  * parameters:
- * lidar_data - internal data
+ * lidar_data - internal data pointer
  * frame_data - a pointer to array that is big enough to store laser_frames_per_read configured during InitLaser
  * 
  * returns:
- * xv11_status.SUCCESS (0) on success
- * xv11_status.SYNCHRONIZATION_ERROR (1) on laser synchronization failure
- * xv11_status.TTY_ERROR (2) on failure 
+ * xv11lidar_status.XV11LIDAR_SUCCESS (0) on success
+ * xv11lidar_status.XV11LIDAR_TTY_ERROR (-1) on tty read failure, you can check errno in this case
+ * xv11lidar_status.XV11LIDAR_SYNC_ERROR (-2) on laser sync failure (CRC failures exceeded per rotation limit)
  * 
- * Currently in case of failure the laser has to be reninitialized (CloseLaser followed by InitLaser)
+ * The errors are generally fatal (unless you set very strict crc_tolerance_percent in xv11lidar_init)
  * 
  * preconditions:
- * -lidar initialized with InitLaser
+ * -lidar initialized with xv11lidar_init
  */
-int ReadLaser(struct xv11lidar_data *lidar_data, struct laser_frame *frame_data);
+int xv11lidar_read(struct xv11lidar *lidar_data, struct xv11lidar_frame *frame_data);
 
 #ifdef __cplusplus
 }
