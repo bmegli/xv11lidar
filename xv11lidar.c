@@ -73,8 +73,8 @@ int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_fram
 	io.c_iflag=io.c_oflag=io.c_lflag=0;
 	io.c_cflag=CS8|CREAD|CLOCAL; //8 bit characters
 	
-	io.c_cc[VMIN]=1; //one input byte enough
-	io.c_cc[VTIME]=0; //no timer
+	io.c_cc[VMIN]=sizeof(struct laser_frame); //one input byte enough
+	io.c_cc[VTIME]=1; // 0.1 sec timeout, test
 	
 	if(cfsetispeed(&io, B115200) < 0 || cfsetospeed(&io, B115200) < 0)
 	{
@@ -182,7 +182,7 @@ int SynchronizeLaser(int fd, int laser_frames_per_read)
 	
 	//flush the current TTY data so that buffers are clean
 	//The LIDAR may have been spinning for a while
-	if(tcflush(fd, TCIOFLUSH)!=0)
+	if(tcflush(fd, TCIFLUSH)!=0)
 		return TTY_ERROR;
 
 	while(1)
@@ -228,6 +228,8 @@ int SynchronizeLaser(int fd, int laser_frames_per_read)
 					io.c_cc[VMIN]=laser_frames_per_read*sizeof(struct laser_frame); 
 				else
 					io.c_cc[VMIN]=11*sizeof(struct laser_frame); //11*22=242 which is the largest possible value <= UCHAR_MAX 	
+	
+				io.c_cc[VTIME]=1;	
 					
 				if(tcsetattr(fd, TCSANOW, &io) < 0)
 					return TTY_ERROR;
