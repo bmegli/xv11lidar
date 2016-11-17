@@ -214,8 +214,10 @@ int SynchronizeLaser(int fd, int laser_frames_per_read)
 				int bytes_to_discard=(FRAMES_PER_ROTATION-1-index) * FRAME_SIZE;
 			
 				for(i=0;i<bytes_to_discard;++i) 
-					if (read(fd,data,1)<0)
-						return TTY_ERROR;						
+					if ( (status=read(fd,data,1)) <0 )
+						return TTY_ERROR;	
+					else if(status==0)
+						fprintf(stderr, "LIDAR sync got 0 on read\n");
 					
 				//get the termios and set it to return data in largest possible chunks
 				struct termios io;
