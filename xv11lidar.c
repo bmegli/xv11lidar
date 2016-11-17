@@ -74,7 +74,7 @@ int InitLaser(struct xv11lidar_data *lidar_data, const char *tty, int laser_fram
 	io.c_cflag=CS8|CREAD|CLOCAL; //8 bit characters
 	
 	io.c_cc[VMIN]=sizeof(struct laser_frame); //one input byte enough
-	io.c_cc[VTIME]=1; // 0.1 sec timeout, test
+	io.c_cc[VTIME]=0; // no timeout
 	
 	if(cfsetispeed(&io, B115200) < 0 || cfsetospeed(&io, B115200) < 0)
 	{
@@ -219,6 +219,7 @@ int SynchronizeLaser(int fd, int laser_frames_per_read)
 					else if(status==0)
 						fprintf(stderr, "LIDAR sync got 0 on read\n");
 					
+				/*	
 				//get the termios and set it to return data in largest possible chunks
 				struct termios io;
 				if(tcgetattr(fd, &io) < 0)				
@@ -229,11 +230,11 @@ int SynchronizeLaser(int fd, int laser_frames_per_read)
 				else
 					io.c_cc[VMIN]=11*sizeof(struct laser_frame); //11*22=242 which is the largest possible value <= UCHAR_MAX 	
 	
-				io.c_cc[VTIME]=1;	
 					
 				if(tcsetattr(fd, TCSANOW, &io) < 0)
 					return TTY_ERROR;
-		
+				*/
+		 
 				break;
 			}	
 		}
