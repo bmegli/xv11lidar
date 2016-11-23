@@ -24,7 +24,7 @@
 #include <limits.h> //UCHAR_MAX
 
 // this constant can be tuned
-const int REQUIRED_SYNC_FRAMES=180; //the number of consecutuve frames that is required to be read correctly (CRC) for sync
+const int REQUIRED_SYNC_FRAMES=450; //the number of consecutuve frames that is required to be read correctly (CRC) for sync
 
 // those constants should not be touched
 const int FRAME_SIZE=sizeof(struct xv11lidar_frame);	
