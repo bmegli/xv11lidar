@@ -1,6 +1,32 @@
 # xv11lidar
 XV11 LIDAR C/C++ Communication Library
 
+# Deprecated
+
+As of 2020 this library is deprecated. It is no longer maintained in any way.
+
+It was implented with the false assumption.\
+I assumed that once the proper communication is established it will work.\
+Turns out the harsh real world is different.
+
+Despite this flaw the XV11 LIDAR with this library served me well for years in many projects.
+
+[![How to interface XV11 LIDAR to EV3 using ev3dev](http://img.youtube.com/vi/G6uVg34VzHw/0.jpg)](https://youtu.be/G6uVg34VzHw)
+
+[![EV3 Gyro vs CruizCore XG1300L vs Odometry - Position Estimation](http://img.youtube.com/vi/vzND_ISdhEs/0.jpg)](https://www.youtube.com/watch?v=vzND_ISdhEs)
+
+[![3D mapping/scanning project with ev3dev OS and Unity UI](http://img.youtube.com/vi/9o_Fi8bHdvs/0.jpg)](https://youtu.be/9o_Fi8bHdvs)
+
+Rest in peace XV11 LIDAR. Rest in peace xv11lidar.
+
+In 2020 (finally!) there are many better devices to use in projects:
+- a range of low cost off the shelf lidars
+- a family of Realsense devices
+- Azure Kinect
+- ZED cameras
+- and plenty of other I never had the chance to play with
+
+
 ## Repository Intention
 
 Intention is for use as submodule in other projects.
